@@ -5,12 +5,29 @@ and builds item metadata and interaction history per user.
 """
 
 import os
+import subprocess
+import urllib.request
+import zipfile
 import pandas as pd
 import numpy as np
 from pathlib import Path
 
 
 DATA_DIR = Path(__file__).parent.parent / "data" / "ml-1m"
+_ML1M_URL = "https://files.grouplens.org/datasets/movielens/ml-1m.zip"
+
+
+def _ensure_data(data_dir: Path = DATA_DIR) -> None:
+    if (data_dir / "ratings.dat").exists():
+        return
+    data_dir.parent.mkdir(parents=True, exist_ok=True)
+    zip_path = data_dir.parent / "ml-1m.zip"
+    print("Downloading MovieLens-1M (~24 MB)...")
+    subprocess.run(["curl", "-L", "--insecure", "-o", str(zip_path), _ML1M_URL], check=True)
+    with zipfile.ZipFile(zip_path, "r") as zf:
+        zf.extractall(data_dir.parent)
+    zip_path.unlink()
+    print("Download complete.")
 
 
 def load_ratings(data_dir: Path = DATA_DIR) -> pd.DataFrame:
@@ -93,6 +110,7 @@ def load_dataset(
         item_metadata: {movie_id: {title, genres, description}}
         all_item_ids:  sorted list of all movie_ids
     """
+    _ensure_data(data_dir)
     ratings_df = load_ratings(data_dir)
     movies_df = load_movies(data_dir)
 
