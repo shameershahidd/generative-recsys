@@ -12,6 +12,8 @@ Comparing a dot-product content-based baseline against an LLM-augmented pipeline
 
 Evaluated on all 6,034 users from MovieLens-1M using leave-last-out splits.
 
+LLM reranking is disabled in the numbers above (free-tier rate limits make it impractical at 6K users). On a 50-user subset with `--rerank` enabled, it provides an additional lift on top of semantic retrieval alone.
+
 ## Architecture
 
 ```
@@ -31,7 +33,22 @@ User history → [Verbalizer] → natural language profile
 **Generative pipeline:**
 1. **Verbalize** — Llama-3.1-8B summarizes the user's watch history into a 2-sentence taste profile
 2. **Retrieve** — the profile is embedded with `all-MiniLM-L6-v2` and queried against a FAISS index of all 3,883 movie embeddings
-3. **Rerank** — optional second LLM pass to reorder candidates (disabled by default to stay within free-tier rate limits)
+3. **Rerank** — optional second LLM pass to reorder the top-20 candidates with explanations (`--rerank` flag); disabled by default due to free-tier rate limits at scale
+
+## Demo
+
+A Streamlit app (`app.py`) lets you pick any user, see their watch history, and compare recommendations side-by-side in real time.
+
+```bash
+export GROQ_API_KEY=your_key_here
+streamlit run app.py
+```
+
+Or deploy to [Streamlit Cloud](https://streamlit.io/cloud) by connecting this repo — set `GROQ_API_KEY` as a secret in the app settings.
+
+## Notebook
+
+`notebooks/analysis.ipynb` walks through dataset stats, metric visualizations, and a live side-by-side recommendation example for any user.
 
 ## Stack
 
@@ -67,8 +84,8 @@ python main.py --mode both
 # Quick test on 100 users
 python main.py --mode both --n-users 100
 
-# Enable LLM reranking (slower — hits rate limits on free tier)
-python main.py --mode generative --rerank
+# Enable LLM reranking on a small subset (hits rate limits at full scale)
+python main.py --mode generative --n-users 50 --rerank
 ```
 
 Item embeddings and the FAISS index are cached to `data/cache/` after the first run.
@@ -84,4 +101,7 @@ src/
   reranker.py        — LLM candidate reranking
   evaluation.py      — NDCG@K, Precision@K, HitRate@K, Coverage
 main.py              — CLI entry point
+app.py               — Streamlit demo
+notebooks/
+  analysis.ipynb     — dataset EDA, metric plots, example recommendations
 ```

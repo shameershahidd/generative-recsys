@@ -31,9 +31,9 @@ st.set_page_config(
 # ── Results (update after full eval run) ─────────────────────────────────────
 
 EVAL_RESULTS = {
-    "n_users": 200,
-    "baseline": {"NDCG@10": 0.0015, "HitRate@10": 0.005,  "Coverage": 0.0827},
-    "generative": {"NDCG@10": 0.0137, "HitRate@10": 0.025, "Coverage": 0.1615},
+    "n_users": 6034,
+    "baseline":   {"NDCG@10": 0.0044, "HitRate@10": 0.0093, "Coverage": 0.2341},
+    "generative": {"NDCG@10": 0.0155, "HitRate@10": 0.0288, "Coverage": 0.4437},
 }
 
 # ── Data + model loading (cached) ────────────────────────────────────────────
