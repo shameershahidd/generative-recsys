@@ -5,7 +5,7 @@ Usage:
     # Baseline only (fast, no API calls):
     python main.py --mode baseline
 
-    # Full generative system (requires ANTHROPIC_API_KEY):
+    # Full generative system (requires GROQ_API_KEY):
     python main.py --mode generative
 
     # Both systems, side-by-side comparison:
@@ -23,7 +23,7 @@ from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
-import anthropic
+from groq import Groq
 from sentence_transformers import SentenceTransformer
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -70,11 +70,12 @@ def run_generative(
     all_item_ids: list[int],
     faiss_index,
     idx_to_id: dict,
-    client: anthropic.Anthropic,
-    model: SentenceTransformer,
+    client: Groq,
+    embed_model: SentenceTransformer,
     n_users: int | None = None,
     top_k: int = 10,
-    retrieval_k: int = 50,
+    retrieval_k: int = 20,
+    rerank: bool = False,
 ) -> dict:
     print("\n=== Running Generative System ===")
     user_ids = list(train_history.keys())
@@ -86,18 +87,21 @@ def run_generative(
         history = train_history[uid]
         exclude = set(history)
 
-        # Step 1: Verbalize
+        # Step 1: Verbalize history into natural language profile
         profile = verbalize_user_profile(history, item_metadata, client)
 
         # Step 2: Semantic retrieval from FAISS
-        profile_vec = embed_text(profile, model)
+        profile_vec = embed_text(profile, embed_model)
         candidates = retrieve_candidates(
             profile_vec, faiss_index, idx_to_id, top_k=retrieval_k, exclude_ids=exclude
         )
 
-        # Step 3: LLM reranking
-        ranked = rerank_candidates(profile, candidates, item_metadata, client, top_k=top_k)
-        recommendations[uid] = [iid for iid, _ in ranked]
+        # Step 3: LLM reranking (optional — slow on free tier)
+        if rerank:
+            ranked = rerank_candidates(profile, candidates, item_metadata, client, top_k=top_k)
+            recommendations[uid] = [iid for iid, _ in ranked]
+        else:
+            recommendations[uid] = candidates[:top_k]
 
     return recommendations
 
@@ -133,7 +137,8 @@ def main():
     parser.add_argument("--mode", choices=["baseline", "generative", "both"], default="baseline")
     parser.add_argument("--n-users", type=int, default=None, help="Limit to N users for quick testing")
     parser.add_argument("--top-k", type=int, default=10)
-    parser.add_argument("--retrieval-k", type=int, default=50, help="FAISS candidates before LLM reranking")
+    parser.add_argument("--retrieval-k", type=int, default=20, help="FAISS candidates before LLM reranking")
+    parser.add_argument("--rerank", action="store_true", help="Enable LLM reranking (slower, hits rate limits)")
     args = parser.parse_args()
 
     # Load data
@@ -141,7 +146,7 @@ def main():
     train_history, test_items, item_metadata, all_item_ids = load_dataset()
     print(f"  Users: {len(train_history):,}  |  Items: {len(all_item_ids):,}")
 
-    # Build embeddings + FAISS index
+    # Build embeddings + FAISS index (cached after first run)
     print("Building item embeddings...")
     embed_model = get_model()
     item_embeddings = build_item_embeddings(item_metadata, all_item_ids, embed_model)
@@ -162,29 +167,30 @@ def main():
         print(f"  Baseline done in {elapsed:.1f}s")
 
     if args.mode in ("generative", "both"):
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
-            print("ERROR: ANTHROPIC_API_KEY not set. Export it and re-run.")
+            print("ERROR: GROQ_API_KEY not set. Export it and re-run.")
             sys.exit(1)
 
-        client = anthropic.Anthropic(api_key=api_key)
+        client = Groq(api_key=api_key)
         start = time.time()
         gen_recs = run_generative(
             train_history, test_items, item_metadata, all_item_ids,
             faiss_index, idx_to_id, client, embed_model,
-            n_users=args.n_users, top_k=args.top_k, retrieval_k=args.retrieval_k,
+            n_users=args.n_users, top_k=args.top_k,
+            retrieval_k=args.retrieval_k, rerank=args.rerank,
         )
         elapsed = time.time() - start
         metrics = evaluate_recommender(gen_recs, test_items, all_item_ids, k=args.top_k)
         metrics["time_s"] = elapsed
-        all_results["Generative (Claude)"] = metrics
+        all_results["Generative (Groq/Llama)"] = metrics
         print(f"  Generative done in {elapsed:.1f}s")
 
     print_results_table(all_results)
 
-    if "both" == args.mode and len(all_results) == 2:
+    if args.mode == "both" and len(all_results) == 2:
         b = all_results["Dot Product Baseline"]
-        g = all_results["Generative (Claude)"]
+        g = all_results["Generative (Groq/Llama)"]
         ndcg_lift = (g["NDCG@10"] - b["NDCG@10"]) / b["NDCG@10"] * 100 if b["NDCG@10"] > 0 else 0
         cov_lift = (g["Coverage"] - b["Coverage"]) / b["Coverage"] * 100 if b["Coverage"] > 0 else 0
         print(f"\nNDCG@10 improvement:  {ndcg_lift:+.1f}%")
