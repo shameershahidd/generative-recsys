@@ -37,14 +37,16 @@ User history → [Verbalizer] → natural language profile
 
 ## Demo
 
-A Streamlit app (`app.py`) lets you pick any user, see their watch history, and compare recommendations side-by-side in real time.
+**Live app:** https://generative-recsys-sktgsdmxs7sfv7qmz85twn.streamlit.app
+
+Pick any of 6,034 users, see their watch history, and compare baseline vs generative recommendations side-by-side in real time.
+
+To run locally:
 
 ```bash
 export GROQ_API_KEY=your_key_here
 streamlit run app.py
 ```
-
-Or deploy to [Streamlit Cloud](https://streamlit.io/cloud) by connecting this repo — set `GROQ_API_KEY` as a secret in the app settings.
 
 ## Notebook
 
